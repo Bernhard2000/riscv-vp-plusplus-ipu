@@ -3,6 +3,7 @@ file(GLOB_RECURSE HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 add_library(platform-basic
 ethernet.cpp
 display.cpp
+ipu.cpp
 ${HEADERS})
 
 target_include_directories(platform-basic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
