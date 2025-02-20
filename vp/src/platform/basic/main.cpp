@@ -29,6 +29,7 @@
 #include "syscall.h"
 #include "uart.h"
 #include "util/options.h"
+#include "ipu.h"
 
 using namespace rv32;
 namespace po = boost::program_options;
@@ -71,7 +72,8 @@ class BasicOptions : public Options {
 	addr_t flash_end_addr = flash_start_addr + Flashcontroller::ADDR_SPACE;  // Usually 528 Byte
 	addr_t display_start_addr = 0x72000000;
 	addr_t display_end_addr = display_start_addr + Display::addressRange;
-
+	addr_t ipu_start_addr = 0x72000000;
+	addr_t ipu_end_addr = 0x72100000;
 	bool quiet = false;
 	bool use_E_base_isa = false;
 
@@ -138,6 +140,7 @@ int sc_main(int argc, char **argv) {
 	EthernetDevice ethernet("EthernetDevice", 7, mem.data, opt.network_device);
 	Display display("Display");
 	DebugMemoryInterface dbg_if("DebugMemoryInterface");
+	IPU ipu("IPU", 8);
 
 	MemoryDMI dmi = MemoryDMI::create_start_size_mapping(mem.data, opt.mem_start_addr, mem.size);
 	InstrMemoryProxy instr_mem(dmi, core);
@@ -199,6 +202,7 @@ int sc_main(int argc, char **argv) {
 		bus.ports[it++] = new PortMapping(opt.ethernet_start_addr, opt.ethernet_end_addr, ethernet);
 		bus.ports[it++] = new PortMapping(opt.display_start_addr, opt.display_end_addr, display);
 		bus.ports[it++] = new PortMapping(opt.sys_start_addr, opt.sys_end_addr, sys);
+		bus.ports[it++] = new PortMapping(opt.ipu_start_addr, opt.ipu_end_addr, ipu);
 	}
 	bus.mapping_complete();
 
@@ -226,6 +230,7 @@ int sc_main(int argc, char **argv) {
 		bus.isocks[it++].bind(ethernet.tsock);
 		bus.isocks[it++].bind(display.tsock);
 		bus.isocks[it++].bind(sys.tsock);
+		bus.isocks[it++].bind(ipu.tsock);
 	}
 
 	// connect interrupt signals/communication
