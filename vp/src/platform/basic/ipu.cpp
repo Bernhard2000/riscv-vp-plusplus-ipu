@@ -97,3 +97,29 @@ void IPU::scale_image() {
         }
     }
 }
+
+void IPU::rotate_image() {
+    if (!input_fb || !output_fb) return;
+    
+    float angle_rad = regs.rotation_angle * M_PI / 180.0f;
+    float cos_angle = cos(angle_rad);
+    float sin_angle = sin(angle_rad);
+    float center_x = regs.width / 2.0f;
+    float center_y = regs.height / 2.0f;
+    
+    // Clear output buffer
+    memset(output_fb, 0, regs.width * regs.height);
+    
+    for (int y = 0; y < regs.height; y++) {
+        for (int x = 0; x < regs.width; x++) {
+            float dx = x - center_x;
+            float dy = y - center_y;
+            int src_x = round(dx * cos_angle - dy * sin_angle + center_x);
+            int src_y = round(dx * sin_angle + dy * cos_angle + center_y);
+            
+            if (src_x >= 0 && src_x < regs.width && src_y >= 0 && src_y < regs.height) {
+                output_fb[y * regs.width + x] = input_fb[src_y * regs.width + src_x];
+            }
+        }
+    }
+}
