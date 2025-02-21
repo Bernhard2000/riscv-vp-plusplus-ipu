@@ -58,9 +58,10 @@ int sc_main(int argc, char **argv) {
 
 	tlm::tlm_global_quantum::instance().set(sc_core::sc_time(opt.tlm_global_quantum, sc_core::SC_NS));
 
-	ISS core0(0, opt.use_E_base_isa);
+	RV_ISA_Config isa_config(opt.use_E_base_isa, opt.en_ext_Zfh);
+	ISS core0(&isa_config, 0);
+	ISS core1(&isa_config, 1);
 	MMU mmu0(core0);
-	ISS core1(1, opt.use_E_base_isa);
 	MMU mmu1(core1);
 
 	CombinedMemoryInterface core0_mem_if("MemoryInterface0", core0, &mmu0);
@@ -88,9 +89,10 @@ int sc_main(int argc, char **argv) {
 
 	loader.load_executable_image(mem, mem.size, opt.mem_start_addr);
 
-	core0.init(&core0_mem_if, &core0_mem_if, &clint, loader.get_entrypoint(),
+	core0.init(&core0_mem_if, opt.use_dbbcache, &core0_mem_if, opt.use_lscache, &clint, loader.get_entrypoint(),
 	           opt.mem_end_addr - 3);  // -3 to not overlap with the next region and stay 32 bit aligned
-	core1.init(&core1_mem_if, &core1_mem_if, &clint, loader.get_entrypoint(), opt.mem_end_addr - 32767);
+	core1.init(&core1_mem_if, opt.use_dbbcache, &core1_mem_if, opt.use_lscache, &clint, loader.get_entrypoint(),
+	           opt.mem_end_addr - 32767);
 
 	sys.init(mem.data, opt.mem_start_addr, loader.get_heap_addr());
 	sys.register_core(&core0);

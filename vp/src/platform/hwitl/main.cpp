@@ -87,7 +87,9 @@ int sc_main(int argc, char** argv) {
 
 	tlm::tlm_global_quantum::instance().set(sc_core::sc_time(opt.tlm_global_quantum, sc_core::SC_NS));
 
-	ISS core(0);
+	RV_ISA_Config isa_config(opt.use_E_base_isa, opt.en_ext_Zfh);
+	ISS core(&isa_config, 0);
+
 	SimpleMemory mem("SimpleMemory", opt.mem_size);
 	SimpleTerminal term("SimpleTerminal");
 	ELFLoader loader(opt.input_program.c_str());
@@ -161,7 +163,8 @@ int sc_main(int argc, char** argv) {
 	 * mainly used together with the syscall handler, this helps for certain floats.
 	 * https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 	 */
-	core.init(instr_mem_if, data_mem_if, one_clint, entry_point, rv64_align_address(opt.mem_end_addr));
+	core.init(instr_mem_if, opt.use_dbbcache, data_mem_if, opt.use_lscache, one_clint, entry_point,
+	          rv64_align_address(opt.mem_end_addr));
 	sys.init(mem.data, opt.mem_start_addr, loader.get_heap_addr());
 	sys.register_core(&core);
 

@@ -117,7 +117,9 @@ int sc_main(int argc, char **argv) {
 
 	tlm::tlm_global_quantum::instance().set(sc_core::sc_time(opt.tlm_global_quantum, sc_core::SC_NS));
 
-	ISS core(0);
+	RV_ISA_Config isa_config(opt.use_E_base_isa, opt.en_ext_Zfh);
+	ISS core(&isa_config, 0);
+
 	SimpleMemory dram("DRAM", opt.dram_size);
 	SimpleMemory flash("Flash", opt.flash_size);
 	ELFLoader loader(opt.input_program.c_str());
@@ -236,7 +238,8 @@ int sc_main(int argc, char **argv) {
 	loader.load_executable_image(flash, flash.size, opt.flash_start_addr, false);
 	loader.load_executable_image(dram, dram.size, opt.dram_start_addr, false);
 
-	core.init(instr_mem_if, data_mem_if, &clint, loader.get_entrypoint(), rv32_align_address(opt.dram_end_addr));
+	core.init(instr_mem_if, opt.use_dbbcache, data_mem_if, opt.use_lscache, &clint, loader.get_entrypoint(),
+	          rv32_align_address(opt.dram_end_addr));
 	sys.init(dram.data, opt.dram_start_addr, loader.get_heap_addr());
 	sys.register_core(&core);
 

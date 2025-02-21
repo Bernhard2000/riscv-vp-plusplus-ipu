@@ -17,9 +17,11 @@
 
 #include "core/common/bus_lock_if.h"
 #include "core/common/clint_if.h"
+#include "core/common/dbbcache.h"
 #include "core/common/debug.h"
 #include "core/common/instr.h"
 #include "core/common/irq_if.h"
+#include "core/common/iss_stats.h"
 #include "core/common/lscache.h"
 #include "core/common/mem_if.h"
 #include "core/common/regfile.h"
@@ -34,6 +36,7 @@
 
 namespace rv32 {
 
+static constexpr Architecture ARCH = RV32;
 static constexpr unsigned XLEN = 32;
 using sxlen_t = int32_t;
 using uxlen_t = uint32_t;
@@ -83,12 +86,12 @@ struct DirectCoreRunner : public sc_core::sc_module {
 	void run() {
 		core.run();
 
-		if (core.status == CoreExecStatus::HitBreakpoint) {
+		if (core.get_status() == CoreExecStatus::HitBreakpoint) {
 			throw std::runtime_error(
 			    "Breakpoints are not supported in the direct runner, use the debug "
 			    "runner instead.");
 		}
-		assert(core.status == CoreExecStatus::Terminated);
+		assert(core.get_status() == CoreExecStatus::Terminated);
 
 		sc_core::sc_stop();
 	}

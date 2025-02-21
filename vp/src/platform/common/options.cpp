@@ -11,12 +11,16 @@ Options::Options(void) {
 	// clang-format off
 	add_options()
 		("help", "produce help message")
+		("use-E-base-isa", po::bool_switch(&use_E_base_isa), "use the E instead of the I integer base ISA")
+		("en-ext-Zfh", po::bool_switch(&en_ext_Zfh), "enable the half-precision floating point extension (Zfh)")
 		("intercept-syscalls", po::bool_switch(&intercept_syscalls), "directly intercept and handle syscalls in the ISS (testing mode)")
 		("error-on-zero-traphandler", po::value<bool>(&error_on_zero_traphandler), "Assume that taking an unset (zero) trap handler in machine mode is an error condition (which it usually is)")
 		("debug-mode", po::bool_switch(&use_debug_runner), "start execution in debugger (using gdb rsp interface)")
 		("debug-port", po::value<unsigned int>(&debug_port), "select port number to connect with GDB")
 		("trace-mode", po::bool_switch(&trace_mode), "enable instruction tracing")
 		("tlm-global-quantum", po::value<unsigned int>(&tlm_global_quantum), "set global tlm quantum (in NS)")
+		("use-dbbcache", po::bool_switch(&use_dbbcache), "use the Dynamic Basic Block Cache (DBBCache) to speed up execution")
+		("use-lscache", po::bool_switch(&use_lscache), "use the Load/Store Cache (LSCache) to speed up dmi access (automatically enables data-dmi, if not set)")
 		("use-instr-dmi", po::bool_switch(&use_instr_dmi), "use dmi to fetch instructions")
 		("use-data-dmi", po::bool_switch(&use_data_dmi), "use dmi to execute load/store operations")
 		("use-dmi", po::bool_switch(), "use instr and data dmi")
@@ -44,6 +48,11 @@ void Options::parse(int argc, char **argv) {
 		}
 
 		po::notify(vm);
+
+		if (vm["use-lscache"].as<bool>() && !vm["use-dmi"].as<bool>() && !vm["use-data-dmi"].as<bool>()) {
+			std::cerr << "[Options] Info: switch 'use-lscache' also activates 'use-data-dmi' if unset." << std::endl;
+			use_data_dmi = true;
+		}
 		if (vm["use-dmi"].as<bool>()) {
 			use_data_dmi = true;
 			use_instr_dmi = true;

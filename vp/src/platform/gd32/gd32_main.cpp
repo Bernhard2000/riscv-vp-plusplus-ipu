@@ -90,7 +90,9 @@ int sc_main(int argc, char **argv) {
 
 	tlm::tlm_global_quantum::instance().set(sc_core::sc_time(opt.tlm_global_quantum, sc_core::SC_NS));
 
-	NUCLEI_ISS core(0);
+	RV_ISA_Config isa_config(opt.use_E_base_isa, opt.en_ext_Zfh);
+	NUCLEI_ISS core(&isa_config, 0);
+
 	SimpleMemory sram("SRAM", opt.sram_size);
 	SimpleMemory flash("Flash", opt.flash_size);
 	ELFLoader loader(opt.input_program.c_str());
@@ -162,7 +164,8 @@ int sc_main(int argc, char **argv) {
 	loader.load_executable_image(flash, flash.size, opt.flash_start_addr, false);
 	loader.load_executable_image(sram, sram.size, opt.sram_start_addr, false);
 
-	core.init(instr_mem_if, data_mem_if, &timer, loader.get_entrypoint(), rv32_align_address(opt.sram_end_addr));
+	core.init(instr_mem_if, opt.use_dbbcache, data_mem_if, opt.use_lscache, &timer, loader.get_entrypoint(),
+	          rv32_align_address(opt.sram_end_addr));
 
 	// connect TLM sockets
 	iss_mem_if.isock.bind(ahb.tsocks[0]);

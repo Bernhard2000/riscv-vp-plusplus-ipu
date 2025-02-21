@@ -55,11 +55,15 @@ using namespace rv32;
  * -> only small memory areas (images sizes) possible
  */
 #define MRAM_SIZE_MB 64  // MB mem mapped file (rootfs)
+/* address to load raw (not elf) images provided via --kernel-file */
+#define KERNEL_LOAD_ADDR 0x80400000
 
 #elif defined(TARGET_RV64)
 using namespace rv64;
 #define MEM_SIZE_MB 2048  // MB ram
 #define MRAM_SIZE_MB 512  // MB mem mapped file (rootfs)
+/* address to load raw (not elf) images provided via --kernel-file */
+#define KERNEL_LOAD_ADDR 0x80200000
 
 #endif /* TARGET_RVxx */
 
@@ -114,6 +118,7 @@ struct LinuxOptions : public Options {
 
 	OptionValue<unsigned long> entry_point;
 	std::string dtb_file;
+	std::string kernel_file;
 	std::string tun_device = "tun0";
 	std::string mram_root_image;
 	std::string mram_data_image;
@@ -128,6 +133,7 @@ struct LinuxOptions : public Options {
 			("memory-size", po::value<unsigned int>(&mem_size), "set memory size")
 			("entry-point", po::value<std::string>(&entry_point.option),"set entry point address (ISS program counter)")
 			("dtb-file", po::value<std::string>(&dtb_file)->required(), "dtb file for boot loading")
+			("kernel-file", po::value<std::string>(&kernel_file), "optional kernel file to load (supports ELF or RAW files)")
 			("tun-device", po::value<std::string>(&tun_device), "tun device used by SLIP")
 			("mram-root-image", po::value<std::string>(&mram_root_image)->default_value(""),"MRAM root image file")
 			("mram-root-image-size", po::value<unsigned int>(&mram_root_size), "MRAM root image size")
@@ -156,16 +162,20 @@ class Core {
 	CombinedMemoryInterface memif;
 	InstrMemoryProxy imemif;
 
-	Core(unsigned int id, const MemoryDMI &dmi)
-	    : iss(id), mmu(iss), memif(("MemoryInterface" + std::to_string(id)).c_str(), iss, &mmu), imemif(dmi, iss) {
+	Core(RV_ISA_Config *isa_config, unsigned int id, MemoryDMI dmi)
+	    : iss(isa_config, id),
+	      mmu(iss),
+	      memif(("MemoryInterface" + std::to_string(id)).c_str(), iss, &mmu),
+	      imemif(dmi, iss) {
 		return;
 	}
 
-	void init(bool use_data_dmi, bool use_instr_dmi, clint_if *clint, uint64_t entry, uint64_t addr) {
+	void init(bool use_data_dmi, bool use_instr_dmi, bool use_dbbcache, bool use_lscache, clint_if *clint,
+	          uint64_t entry, uint64_t addr) {
 		if (use_data_dmi)
 			memif.dmi_ranges.emplace_back(imemif.dmi);
 
-		iss.init(get_instr_memory_if(use_instr_dmi), &memif, clint, entry, addr);
+		iss.init(get_instr_memory_if(use_instr_dmi), use_dbbcache, &memif, use_lscache, clint, entry, addr);
 	}
 
    private:
@@ -177,9 +187,34 @@ class Core {
 	}
 };
 
+void handle_kernel_file(const LinuxOptions opt, SimpleMemory &mem) {
+	if (opt.kernel_file.size() == 0) {
+		return;
+	}
+
+	std::cout << "Info: load kernel file \"" << opt.kernel_file << "\" ";
+	ELFLoader elf(opt.kernel_file.c_str());
+	if (elf.is_elf()) {
+		/* load elf (use physical addresses) */
+		std::cout << "as ELF file (to physical addresses defined in ELF)";
+		elf.load_executable_image(mem, mem.size, opt.mem_start_addr, false);
+	} else {
+		/* load raw to KERNEL_LOAD_ADDR */
+		std::cout << "as RAW file (to 0x" << std::hex << KERNEL_LOAD_ADDR << std::dec << ")";
+		mem.load_binary_file(opt.kernel_file, KERNEL_LOAD_ADDR - opt.mem_start_addr);
+	}
+	std::cout << std::endl;
+}
+
 int sc_main(int argc, char **argv) {
 	LinuxOptions opt;
 	opt.parse(argc, argv);
+
+	if (opt.use_E_base_isa) {
+		std::cerr << "Error: The Linux VP does not support RV32E/RV64E!" << std::endl;
+		return -1;
+	}
+	RV_ISA_Config isa_config(false, opt.en_ext_Zfh);
 
 	std::srand(std::time(nullptr));  // use current time as seed for random generator
 
@@ -225,7 +260,7 @@ int sc_main(int argc, char **argv) {
 
 	Core *cores[NUM_CORES];
 	for (unsigned i = 0; i < NUM_CORES; i++) {
-		cores[i] = new Core(i, dmi);
+		cores[i] = new Core(&isa_config, i, dmi);
 	}
 
 	std::shared_ptr<BusLock> bus_lock = std::make_shared<BusLock>();
@@ -241,7 +276,8 @@ int sc_main(int argc, char **argv) {
 	loader.load_executable_image(mem, mem.size, opt.mem_start_addr);
 	sys.init(mem.data, opt.mem_start_addr, loader.get_heap_addr());
 	for (size_t i = 0; i < NUM_CORES; i++) {
-		cores[i]->init(opt.use_data_dmi, opt.use_instr_dmi, &clint, entry_point, rv64_align_address(opt.mem_end_addr));
+		cores[i]->init(opt.use_data_dmi, opt.use_instr_dmi, opt.use_dbbcache, opt.use_lscache, &clint, entry_point,
+		               rv64_align_address(opt.mem_end_addr));
 
 		sys.register_core(&cores[i]->iss);
 		if (opt.intercept_syscalls)
@@ -319,12 +355,6 @@ int sc_main(int argc, char **argv) {
 		// emulate RISC-V core boot loader
 		cores[i]->iss.regs[RegFile::a0] = cores[i]->iss.get_hart_id();
 		cores[i]->iss.regs[RegFile::a1] = opt.dtb_rom_start_addr;
-
-#ifdef TARGET_RV32
-		// configure supported instructions
-		cores[i]->iss.csrs.misa.fields.extensions |= cores[i]->iss.csrs.misa.M | cores[i]->iss.csrs.misa.A |
-		                                             cores[i]->iss.csrs.misa.F | cores[i]->iss.csrs.misa.D;
-#endif /* TARGET_RV32 */
 	}
 
 	// OpenSBI boots all harts except hart 0 by default.
@@ -341,6 +371,9 @@ int sc_main(int argc, char **argv) {
 
 	// load DTB (Device Tree Binary) file
 	dtb_rom.load_binary_file(opt.dtb_file, 0);
+
+	// load kernel
+	handle_kernel_file(opt, mem);
 
 	std::vector<mmu_memory_if *> mmus;
 	std::vector<debug_target_if *> dharts;
