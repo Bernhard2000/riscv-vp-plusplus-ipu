@@ -134,9 +134,10 @@ struct IPU : public sc_core::sc_module {
 				capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 			}
 			sc_core::wait(capture_event);
-			
+
 			output_buffer = frame_buffer;
 			plic->gateway_trigger_interrupt(irq_number);
+			enable = false;
 			n++;
 		}
 	}
