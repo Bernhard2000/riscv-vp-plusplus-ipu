@@ -19,7 +19,6 @@
 #define AVAIL_IMG 3 /* number of different image frames (1 or more) */
 #define VERBOSE true
 
-#define OUTPUT_BUFFER_ADDR 0x400000
 #define OUTPUT_BUFFER_SIZE (IPU_MAX_WIDTH * IPU_MAX_HEIGHT)
 
 struct IPU : public sc_core::sc_module {

@@ -2,10 +2,15 @@
 #include "filter.h"
 
 void camera_irq_handler(void);
+void ipu_irq_handler(void);
+
 void StartCamera(void);
 void StopCamera(void);
 void data_in(unsigned char *image, unsigned int i);
 void data_out(unsigned char *edge, unsigned int i);
+
+void ipu_data_in(unsigned char *image, unsigned int i);
+
 
 static volatile char *const CAMERA_START_ADDR = (char *const)0x51000000;
 static volatile char *const CAMERA_END_ADDR   = (char *const)0x51ffffff;
@@ -20,15 +25,19 @@ static volatile uint32_t *const CAMERA_HEIGHT_REG_ADDR =
 
 const uint32_t CAMERA_IRQ_NUMBER = 5;
 volatile unsigned int frames_captured = 0;
+volatile unsigned int ipu_frames_processed = 0;
+
 
 static volatile char *const IPU_START_ADDR = (char *const)0x73000000;
 static volatile char *const IPU_END_ADDR   = (char *const)0x73ffffff; 
 static volatile unsigned char *const IPU_INPUT_BUFFER_ADDR =
          (unsigned char *const)(IPU_START_ADDR + 0x000000);
-static volatile unsigned char *const IPU_OUTPUT_BUFFER_ADDR =
-         (unsigned char *const)(IPU_START_ADDR + 0x100000);
-static volatile uint32_t *const IPU_CONTROL_REG_ADDR =
-         (uint32_t *const)(IPU_START_ADDR + 0xff0000);
+static volatile uint32_t *const IPU_SCALE_FACTOR_REG_ADDR  =
+         (uint32_t *const)(IPU_START_ADDR + 0xff0008);
+static volatile uint32_t *const IPU_ROTATION_ANGLE_REG_ADDR =
+         (uint32_t *const)(IPU_START_ADDR + 0xff000c);
+static volatile uint32_t *const IPU_CAPTURE_INTERVAL_REG_ADDR =
+			(uint32_t *const)(IPU_START_ADDR + 0xff0010);
    
 
 /* Gaussian kernel (computed at beginning, then constant) */
@@ -54,8 +63,9 @@ int main(void)
       *************************************************************************/
       printf("Input image frame %u.\n", i+1);
       data_in(image, i);
+      *IPU_CAPTURE_INTERVAL_REG_ADDR = 1e7;
+      ipu_data_in(image, i);
 
-     
       /*************************************************************************
       * Output a frame.
       *************************************************************************/
@@ -74,6 +84,12 @@ void camera_irq_handler(void)
     printf("Capture frame %u.\n", frames_captured);
 }
 
+void ipu_irq_handler(void)
+{
+    ipu_frames_processed++;
+    printf("Capture frame %u.\n", frames_captured);
+}
+
 void StartCamera(void) /* configure and turn on the camera */
 {
     register_interrupt_handler(CAMERA_IRQ_NUMBER, camera_irq_handler);
@@ -82,6 +98,14 @@ void StartCamera(void) /* configure and turn on the camera */
 //  *CAMERA_CAPTURE_INTERVAL_REG_ADDR = 33333; /* capture every 33333us (30 FPS) */
 //  *CAMERA_CAPTURE_INTERVAL_REG_ADDR = 1e6;   /* capture every second  ( 1 FPS) */
     *CAMERA_CAPTURE_INTERVAL_REG_ADDR = 1e7;   /* capture every 10 secs (.1 FPS) */
+}
+
+void StartIPU(void) 
+{
+      register_interrupt_handler(CAMERA_IRQ_NUMBER, ipu_irq_handler);
+      *IPU_SCALE_FACTOR_REG_ADDR  = 1;   /* set requested frame dimensions */
+      *IPU_ROTATION_ANGLE_REG_ADDR = 0;
+      *IPU_CAPTURE_INTERVAL_REG_ADDR = 0;
 }
 
 void StopCamera(void)
@@ -104,6 +128,22 @@ void data_in(unsigned char *image, unsigned int i)
    frames_captured = 0;
 
    copy_image(image, (const void*)CAMERA_FRAME_BUFFER_ADDR, sizeof(unsigned char));
+}
+
+void ipu_data_in(unsigned char *image, unsigned int i)
+{
+   /*************************************************************************
+   * Grab an image from the camera
+   *************************************************************************/
+   while (!ipu_frames_processed) {
+      asm volatile ("wfi");
+   }
+   if (ipu_frames_processed>1) {
+      printf("Warning: %u frames skipped! Processing too slow.\n", frames_captured);
+   }
+   ipu_frames_processed = 0;
+
+   copy_image(image, (const void*)IPU_INPUT_BUFFER_ADDR, sizeof(unsigned char));
 }
 
 void data_out(unsigned char *edge, unsigned int i)
