@@ -180,6 +180,9 @@ struct IPU : public sc_core::sc_module {
 	void rotate_image() {
 		// Only support 90-degree rotations
 		switch (rotation_angle) {
+			case 0:
+				// Do fuck all
+				break;
 			case 90:
 				rotate_90();
 				break;
@@ -190,7 +193,7 @@ struct IPU : public sc_core::sc_module {
 				rotate_270();
 				break;
 			default:
-				// Do nothing for 0 degrees
+				rotate(rotation_angle)
 				break;
 		}
 	}
