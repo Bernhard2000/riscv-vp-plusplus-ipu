@@ -63,7 +63,7 @@ int main(void)
       *************************************************************************/
       printf("Input image frame %u.\n", i+1);
       data_in(image, i);
-      *IPU_CAPTURE_INTERVAL_REG_ADDR = 1e7;
+      *IPU_CAPTURE_INTERVAL_REG_ADDR = 1e7; //enable IPU processing
       ipu_data_in(image, i);
 
       /*************************************************************************

@@ -28,7 +28,7 @@ struct IPU : public sc_core::sc_module {
 	uint32_t irq_number = 0;
 	sc_core::sc_event capture_event;
 
-	uint32_t capture_interval = 0;  // 0 = off, 33333us = 30 FPS, 1min max
+	uint32_t enable = 0;  // TODO should probably be boolean flag, or event based
 
 	// memory mapped frame buffer at offset 0x0 (i.e. 0x51000000)
 	unsigned char *frame_buffer = 0;
@@ -47,7 +47,7 @@ struct IPU : public sc_core::sc_module {
 		INPUT_HEIGHT_ADDR = 0xff0004,
 		SCALE_FACTOR_ADDR = 0xff0008,
 		ROTATION_ANGLE_ADDR = 0xff00c,
-		CAPTURE_INTERVAL_REG_ADDR = 0xff0010,
+		ENABLE_REG_ADDR = 0xff0010,
 	};
 
 	SC_HAS_PROCESS(IPU);
@@ -62,7 +62,7 @@ struct IPU : public sc_core::sc_module {
 		    {INPUT_HEIGHT_ADDR, &input_height},
 		    {SCALE_FACTOR_ADDR, &scale_factor},
 		    {ROTATION_ANGLE_ADDR, &rotation_angle},
-		    {CAPTURE_INTERVAL_REG_ADDR, &capture_interval},
+		    {ENABLE_REG_ADDR, &enable}
 		};
 		SC_THREAD(processing_thread);
 	}
@@ -116,10 +116,10 @@ struct IPU : public sc_core::sc_module {
 			}
 
 			// trigger post read/write actions
-			if ((cmd == tlm::TLM_WRITE_COMMAND) && (addr == CAPTURE_INTERVAL_REG_ADDR)) {
+			if ((cmd == tlm::TLM_WRITE_COMMAND) && (addr == ENABLE_REG_ADDR)) {
 				capture_event.cancel();
-				if (capture_interval > 0) {
-					capture_event.notify(sc_core::sc_time(capture_interval, sc_core::SC_US));
+				if (enable) {
+					capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 				}
 			}
 		}
@@ -130,8 +130,8 @@ struct IPU : public sc_core::sc_module {
 		char infilename[70];
 		while (true) {
 			fprintf(stderr, "%s: %s waiting for capture event.\n", sc_time_stamp().to_string().c_str(), name());
-			if (capture_interval > 0) {
-				capture_event.notify(sc_core::sc_time(capture_interval, sc_core::SC_US));
+			if (enable) {
+				capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 			}
 			sc_core::wait(capture_event);
 
