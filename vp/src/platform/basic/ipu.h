@@ -174,7 +174,7 @@ struct IPU : public sc_core::sc_module {
 				rotate_270();
 				break;
 			default:
-				rotate(rotation_angle)
+				rotate(rotation_angle);
 				break;
 		}
 	}
