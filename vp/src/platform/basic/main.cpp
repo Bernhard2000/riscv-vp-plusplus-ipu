@@ -30,6 +30,7 @@
 #include "uart.h"
 #include "util/options.h"
 #include "camera.h"
+#include "ipu.h"
 
 using namespace rv32;
 namespace po = boost::program_options;
@@ -75,6 +76,9 @@ class BasicOptions : public Options {
 	addr_t flash_end_addr = flash_start_addr + Flashcontroller::ADDR_SPACE;  // Usually 528 Byte
 	addr_t display_start_addr = 0x72000000;
 	addr_t display_end_addr = display_start_addr + Display::addressRange;
+		addr_t ipu_start_addr = 0x73000000;
+	addr_t ipu_size = 0x01000000;  // 16 MB address space for ipu
+	addr_t ipu_end_addr = ipu_start_addr + ipu_size - 1;
 
 	bool quiet = false;
 
@@ -143,6 +147,7 @@ int sc_main(int argc, char **argv) {
 	EthernetDevice ethernet("EthernetDevice", 7, mem.data, opt.network_device);
 	Display display("Display");
 	DebugMemoryInterface dbg_if("DebugMemoryInterface");
+	IPU ipu("IPU", 8);
 
 	MemoryDMI dmi = MemoryDMI::create_start_size_mapping(mem.data, opt.mem_start_addr, mem.size);
 	InstrMemoryProxy instr_mem(dmi, core);
@@ -154,7 +159,7 @@ int sc_main(int argc, char **argv) {
 	if (opt.use_debug_bus) {
 		debug_bus = new NetTrace(opt.debug_bus_port);
 	}
-	SimpleBus<3, 13> bus("SimpleBus", debug_bus, opt.break_on_transaction);
+	SimpleBus<3, 14> bus("SimpleBus", debug_bus, opt.break_on_transaction);
 
 	instr_memory_if *instr_mem_if = &iss_mem_if;
 	data_memory_if *data_mem_if = &iss_mem_if;
@@ -205,6 +210,7 @@ int sc_main(int argc, char **argv) {
 		bus.ports[it++] = new PortMapping(opt.flash_start_addr, opt.flash_end_addr, flashController);
 		bus.ports[it++] = new PortMapping(opt.ethernet_start_addr, opt.ethernet_end_addr, ethernet);
 		bus.ports[it++] = new PortMapping(opt.display_start_addr, opt.display_end_addr, display);
+		bus.ports[it++] = new PortMapping(opt.ipu_start_addr, opt.ipu_end_addr, ipu);
 		bus.ports[it++] = new PortMapping(opt.sys_start_addr, opt.sys_end_addr, sys);
 	}
 	bus.mapping_complete();
@@ -233,6 +239,7 @@ int sc_main(int argc, char **argv) {
 		bus.isocks[it++].bind(flashController.tsock);
 		bus.isocks[it++].bind(ethernet.tsock);
 		bus.isocks[it++].bind(display.tsock);
+		bus.isocks[it++].bind(ipu.tsock);
 		bus.isocks[it++].bind(sys.tsock);
 	}
 
@@ -246,6 +253,7 @@ int sc_main(int argc, char **argv) {
 	//sensor2.plic = &plic;
 	camera.plic = &plic;
 	ethernet.plic = &plic;
+	ipu.plic = &plic;
 
 	std::vector<debug_target_if *> threads;
 	threads.push_back(&core);
