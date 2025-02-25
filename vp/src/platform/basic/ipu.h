@@ -196,8 +196,8 @@ struct IPU : public sc_core::sc_module {
 	}
 
 	void rotate_90() {
-		uint32_t output_width = input_width * scale_factor;
-		uint32_t output_height = input_height * scale_factor;
+		uint32_t output_width = input_height * scale_factor;
+		uint32_t output_height = input_width * scale_factor;
 		unsigned char *temp = new unsigned char[OUTPUT_BUFFER_SIZE];
 		for (uint32_t y = 0; y < output_height; y++) {
 			for (uint32_t x = 0; x < output_width; x++) {
@@ -223,8 +223,8 @@ struct IPU : public sc_core::sc_module {
 	}
 
 	void rotate_270() {
-		uint32_t output_width = input_width * scale_factor;
-		uint32_t output_height = input_height * scale_factor;
+		uint32_t output_width = input_height * scale_factor;
+		uint32_t output_height = input_width * scale_factor;
 		unsigned char *temp = new unsigned char[OUTPUT_BUFFER_SIZE];
 		for (uint32_t y = 0; y < output_height; y++) {
 			for (uint32_t x = 0; x < output_width; x++) {
@@ -234,6 +234,30 @@ struct IPU : public sc_core::sc_module {
 		memcpy(output_buffer, temp, OUTPUT_BUFFER_SIZE);
 		delete[] temp;
 	}
+
+	//rotate arbitrary degrees (untested and mostly as a placeholder, might be garbage)
+	void rotate(uint32_t deg) {
+		uint32_t output_width = input_width * scale_factor;
+		uint32_t output_height = input_height * scale_factor;
+		unsigned char *temp = new unsigned char[OUTPUT_BUFFER_SIZE];
+		
+		double angle = deg * M_PI / 180.0;
+		double cos_angle = cos(angle);
+		double sin_angle = sin(angle);
+
+		for (uint32_t y = 0; y < output_height; y++) {
+			for (uint32_t x = 0; x < output_width; x++) {
+				int new_x = static_cast<int>(cos_angle * (x - output_width / 2) - sin_angle * (y - output_height / 2) + output_width / 2);
+				int new_y = static_cast<int>(sin_angle * (x - output_width / 2) + cos_angle * (y - output_height / 2) + output_height / 2);
+
+				if (new_x >= 0 && new_x < output_width && new_y >= 0 && new_y < output_height) {
+					temp[new_y * output_width + new_x] = output_buffer[y * output_width + x];
+				}
+			}
+		}
+		memcpy(output_buffer, temp, OUTPUT_BUFFER_SIZE);
+		delete[] temp;
+	} 
 
 	/******************************************************************************
 	 * Function: read_pgm_image
