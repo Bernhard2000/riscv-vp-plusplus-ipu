@@ -30,7 +30,7 @@ struct IPU : public sc_core::sc_module {
 
 	uint32_t enable = 0;  // TODO should probably be boolean flag, or event based
 
-	// memory mapped frame buffer at offset 0x0 (i.e. 0x51000000)
+	// memory mapped frame buffer at offset 0x0
 	unsigned char *frame_buffer = 0;
 	unsigned char *output_buffer = 0;
 
@@ -134,27 +134,7 @@ struct IPU : public sc_core::sc_module {
 				capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 			}
 			sc_core::wait(capture_event);
-
-			/*// capture an image into the frame buffer
-			sprintf(infilename, IMG_IN, input_width, input_height, (n % AVAIL_IMG) + 1);
-			if (read_pgm_image(infilename, frame_buffer, input_height, capture_width) == 0) {
-				//	// no suitable image file found, make a monotone one
-				//      memset(frame_buffer, (n*32)%256, capture_height*capture_width);
-				// no suitable image file found, make a diagonally striped one
-				fprintf(stderr, "No suitable image file found, making a diagonally striped one.\n");
-				for (unsigned h = 0; h < input_height; h++) {
-					for (unsigned w = 0; w < capture_width; w++) {
-						frame_buffer[h * capture_width + w] = ((w + h + n) * 32) % 256;
-					}
-				}
-				if (VERBOSE)
-					fprintf(stderr, "%s: %s captured image %u [%ux%u].\n", sc_time_stamp().to_string().c_str(), name(),
-					        n, capture_width, input_height);
-			} else {
-				if (VERBOSE)
-					fprintf(stderr, "%s: %s captured image %u [%ux%u] (%s).\n", sc_time_stamp().to_string().c_str(),
-					        name(), n, capture_width, input_height, infilename);
-			}*/
+			
 			output_buffer = frame_buffer;
 			plic->gateway_trigger_interrupt(irq_number);
 			n++;
@@ -261,78 +241,5 @@ struct IPU : public sc_core::sc_module {
 		memcpy(output_buffer, temp, OUTPUT_BUFFER_SIZE);
 		delete[] temp;
 	} 
-
-	/******************************************************************************
-	 * Function: read_pgm_image
-	 * Purpose: This function reads in an image in PGM format. The image can be
-	 * read in from either a file or from standard input. The image is only read
-	 * from standard input when infilename = NULL. Because the PGM format includes
-	 * the number of columns and the number of rows in the image, these are read
-	 * from the file. Memory to store the image is allocated OUTSIDE this function.
-	 * The found image size is checked against the expected rows and cols.
-	 * All comments in the header are discarded in the process of reading the
-	 * image. Upon failure, this function returns 0, upon sucess it returns 1.
-	 ******************************************************************************/
-	int read_pgm_image(const char *infilename, unsigned char *image, int rows, int cols) {
-		FILE *fp;
-		char buf[71];
-		int r, c;
-
-		/***************************************************************************
-		 * Open the input image file for reading if a filename was given. If no
-		 * filename was provided, set fp to read from standard input.
-		 ***************************************************************************/
-		if (infilename == NULL)
-			fp = stdin;
-		else {
-			if ((fp = fopen(infilename, "r")) == NULL) {
-				//       fprintf(stderr, "Error reading the file %s in read_pgm_image().\n",
-				//          infilename);
-				return (0);
-			}
-		}
-
-		/***************************************************************************
-		 * Verify that the image is in PGM format, read in the number of columns
-		 * and rows in the image and scan past all of the header information.
-		 ***************************************************************************/
-		fgets(buf, 70, fp);
-		if (strncmp(buf, "P5", 2) != 0) {
-			//    fprintf(stderr, "The file %s is not in PGM format in ", infilename);
-			//    fprintf(stderr, "read_pgm_image().\n");
-			if (fp != stdin)
-				fclose(fp);
-			return (0);
-		}
-		do {
-			fgets(buf, 70, fp);
-		} while (buf[0] == '#'); /* skip all comment lines */
-		sscanf(buf, "%d %d", &c, &r);
-		if (c != cols || r != rows) {
-			//    fprintf(stderr, "The file %s is not a %d by %d image in ", infilename,
-			//            cols, rows);
-			//    fprintf(stderr, "read_pgm_image().\n");
-			if (fp != stdin)
-				fclose(fp);
-			return (0);
-		}
-		do {
-			fgets(buf, 70, fp);
-		} while (buf[0] == '#'); /* skip all comment lines */
-
-		/***************************************************************************
-		 * Read the image from the file.
-		 ***************************************************************************/
-		if ((unsigned)rows != fread(image, cols, rows, fp)) {
-			//    fprintf(stderr, "Error reading the image data in read_pgm_image().\n");
-			if (fp != stdin)
-				fclose(fp);
-			return (0);
-		}
-
-		if (fp != stdin)
-			fclose(fp);
-		return (1);
-	}
 };
 #endif  // RISCV_ISA_IPU_H
