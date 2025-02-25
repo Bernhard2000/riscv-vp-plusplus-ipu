@@ -30,6 +30,8 @@
 #include "uart.h"
 #include "util/options.h"
 #include "ipu.h"
+#include "camera.h"
+
 
 using namespace rv32;
 namespace po = boost::program_options;
@@ -61,8 +63,9 @@ class BasicOptions : public Options {
 	addr_t plic_end_addr = 0x41000000;
 	addr_t sensor_start_addr = 0x50000000;
 	addr_t sensor_end_addr = 0x50001000;
-	addr_t sensor2_start_addr = 0x50002000;
-	addr_t sensor2_end_addr = 0x50004000;
+	addr_t camera_start_addr = 0x51000000;
+	addr_t camera_size = 0x01000000;  // 16 MB address space for camera
+	addr_t camera_end_addr = camera_start_addr + camera_size - 1;
 	addr_t mram_start_addr = 0x60000000;
 	addr_t mram_size = 0x10000000;
 	addr_t mram_end_addr = mram_start_addr + mram_size - 1;
@@ -73,7 +76,8 @@ class BasicOptions : public Options {
 	addr_t display_start_addr = 0x72000000;
 	addr_t display_end_addr = display_start_addr + Display::addressRange;
 	addr_t ipu_start_addr = 0x73000000;
-	addr_t ipu_end_addr = 0x73100000;
+	addr_t ipu_size = 0x01000000;  // 16 MB address space for ipu
+	addr_t ipu_end_addr = ipu_start_addr + ipu_size - 1;
 	bool quiet = false;
 
 	OptionValue<unsigned long> entry_point;
@@ -132,7 +136,8 @@ int sc_main(int argc, char **argv) {
 	FE310_PLIC<1, 64, 96, 32> plic("PLIC");
 	CLINT<1> clint("CLINT");
 	SimpleSensor sensor("SimpleSensor", 2);
-	SimpleSensor2 sensor2("SimpleSensor2", 5);
+	//SimpleSensor2 sensor2("SimpleSensor2", 5);
+	CannyCamera camera("CannyCamera", 5);
 	BasicTimer timer("BasicTimer", 3);
 	MemoryMappedFile mram("MRAM", opt.mram_image, opt.mram_size);
 	SimpleDMA dma("SimpleDMA", 4);
@@ -197,7 +202,7 @@ int sc_main(int argc, char **argv) {
 		bus.ports[it++] = new PortMapping(opt.uart_start_addr, opt.uart_end_addr, uart);
 		bus.ports[it++] = new PortMapping(opt.sensor_start_addr, opt.sensor_end_addr, sensor);
 		bus.ports[it++] = new PortMapping(opt.dma_start_addr, opt.dma_end_addr, dma);
-		bus.ports[it++] = new PortMapping(opt.sensor2_start_addr, opt.sensor2_end_addr, sensor2);
+		bus.ports[it++] = new PortMapping(opt.camera_start_addr, opt.camera_end_addr, camera);
 		bus.ports[it++] = new PortMapping(opt.mram_start_addr, opt.mram_end_addr, mram);
 		bus.ports[it++] = new PortMapping(opt.flash_start_addr, opt.flash_end_addr, flashController);
 		bus.ports[it++] = new PortMapping(opt.ethernet_start_addr, opt.ethernet_end_addr, ethernet);
@@ -225,7 +230,7 @@ int sc_main(int argc, char **argv) {
 		bus.isocks[it++].bind(uart.tsock);
 		bus.isocks[it++].bind(sensor.tsock);
 		bus.isocks[it++].bind(dma.tsock);
-		bus.isocks[it++].bind(sensor2.tsock);
+		bus.isocks[it++].bind(camera.tsock);
 		bus.isocks[it++].bind(mram.tsock);
 		bus.isocks[it++].bind(flashController.tsock);
 		bus.isocks[it++].bind(ethernet.tsock);
@@ -241,8 +246,10 @@ int sc_main(int argc, char **argv) {
 	sensor.plic = &plic;
 	dma.plic = &plic;
 	timer.plic = &plic;
-	sensor2.plic = &plic;
+	//sensor2.plic = &plic;
+	camera.plic = &plic;
 	ethernet.plic = &plic;
+	ipu.plic = &plic;
 
 	std::vector<debug_target_if *> threads;
 	threads.push_back(&core);
