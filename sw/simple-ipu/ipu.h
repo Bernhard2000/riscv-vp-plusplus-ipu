@@ -15,10 +15,10 @@
 #define COLS 2048
 #define ROWS 1365
 #define SIZE COLS*ROWS
-/*#define IMG_IN    "video/jku%03u.pgm"
-#define IMG_OUT   "jku%03u_%s.pgm"*/
-#define IMG_IN    "video/img%03u.pgm"
-#define IMG_OUT   "img%03u_%s.pgm"
+#define IMG_IN    "video/jku%03u.pgm"
+#define IMG_OUT   "jku%03u_%s.pgm"
+/*#define IMG_IN    "video/img%03u.pgm"
+#define IMG_OUT   "img%03u_%s.pgm"*/
 #define IMG_NUM   3
 
 /* Function declarations */

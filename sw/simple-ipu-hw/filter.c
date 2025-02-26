@@ -632,4 +632,9 @@ void copy_image(void *dst, const void *src, size_t pixel_size)
    memcpy(dst, src, SIZE*pixel_size);
 }
 
+void copy_image_size(void *dst, const void *src, size_t pixel_size, int pixels)
+{
+   memcpy(dst, src, pixels*pixel_size);
+}
+
 /* EOF */

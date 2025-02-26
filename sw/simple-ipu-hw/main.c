@@ -61,7 +61,7 @@ int Gaussian_kernel_center = 0;
 
 int main(void)
 {
-   unsigned char image[SIZE];
+   unsigned char image[SIZE*2]; //TODO make whatever max size is
    unsigned char edge[SIZE];
    unsigned int i;
    int windowsize; /* Dimension of the gaussian kernel. */
@@ -165,9 +165,9 @@ void ipu_data_in(unsigned char *image, unsigned int i)
    }
    ipu_frames_processed = 0;
 
-   copy_image(image, (const void*)IPU_INPUT_BUFFER_ADDR, sizeof(unsigned char));
    height = *IPU_OUTPUT_HEIGHT_REG_ADDR;
    width = *IPU_OUTPUT_WIDTH_REG_ADDR;
+   copy_image_size(image, (const void*)IPU_INPUT_BUFFER_ADDR, sizeof(unsigned char), height*width);
 }
 
 void data_out(unsigned char *edge, unsigned int i)

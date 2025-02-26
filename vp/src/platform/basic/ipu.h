@@ -263,11 +263,10 @@ struct IPU : public sc_core::sc_module {
 		if (abs_sin < 0) abs_sin = -abs_sin;
 		double abs_cos = cos_angle;
 		if (abs_cos < 0) abs_cos = -abs_cos;
-		//output_width = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
-		//output_height = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
+		output_width = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
+		output_height = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
 		
-		uint32_t output_width2 = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
-		uint32_t output_height2 = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
+		
 		fprintf(stderr, "Rotating image by %d degrees, new dimensions: %d x %d\n", deg, output_width, output_height);
 
 		float center_x = input_width / 2.0f;
@@ -276,8 +275,8 @@ struct IPU : public sc_core::sc_module {
 		float out_center_x = output_width / 2.0f;
 		float out_center_y = output_height / 2.0f;
 
-		for(int y = 0; y < output_height2; y++) {
-			for(int x = 0; x < output_width2; x++) {
+		for(int y = 0; y < output_height; y++) {
+			for(int x = 0; x < output_width; x++) {
 				float dx = x - out_center_x;
 				float dy = y - out_center_y;
 				float src_x = (dx * cos_angle + dy * sin_angle + center_x);

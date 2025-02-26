@@ -47,5 +47,6 @@ void non_max_supp(short *mag, short *gradx, short *grady, int nrows, int ncols,
 int write_pgm_image(const char *outfilename, unsigned char *image, int rows,
     int cols, const char *comment, int maxval);
 void copy_image(void *dst, const void *src, size_t pixel_size);
+void copy_image_size(void *dst, const void *src, size_t pixel_size, int pixelCount);
 
 #endif
