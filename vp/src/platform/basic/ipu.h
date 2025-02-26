@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <systemc>
+#include <cmath> // Include the cmath library
 
 #include "core/common/irq_if.h"
 
@@ -35,11 +36,11 @@ struct IPU : public sc_core::sc_module {
 	// Configuration registers
 	uint32_t input_width = 640;   // default width
 	uint32_t input_height = 480;  // default height
-	uint32_t scale_factor = 1;    // default scale factor
+	uint32_t scale_factor = 1;    //TODO make float or something, default scale factor
 	uint32_t rotation_angle = 0;  // rotation angle in degrees (0, 90, 180, 270)
 
-	uint32_t output_width = 0;
-	uint32_t output_height = 0;
+	uint32_t output_width = 70;
+	uint32_t output_height = 100;
 
 	std::unordered_map<uint64_t, uint32_t *> addr_to_reg;
 
@@ -50,7 +51,7 @@ struct IPU : public sc_core::sc_module {
 		ROTATION_ANGLE_ADDR = 0xff000c,
 		ENABLE_REG_ADDR = 0xff0010,
 		OUTPUT_WIDTH_ADDR = 0xff0014,
-		OUTPUT_HEIGHT_ADDR = 0xff0018
+		OUTPUT_HEIGHT_ADDR = 0xff0018,
 	};
 
 	SC_HAS_PROCESS(IPU);
@@ -67,7 +68,7 @@ struct IPU : public sc_core::sc_module {
 		    {ROTATION_ANGLE_ADDR, &rotation_angle},
 		    {ENABLE_REG_ADDR, &enable},
 			{OUTPUT_WIDTH_ADDR, &output_width},
-			{OUTPUT_HEIGHT_ADDR, &output_height}
+			{OUTPUT_HEIGHT_ADDR, &output_height},
 		};
 		SC_THREAD(processing_thread);
 	}
@@ -88,7 +89,7 @@ struct IPU : public sc_core::sc_module {
 				memcpy(ptr, &frame_buffer[addr], len);
 		} else {
 			assert(len == 4);  // NOTE: only allow to read/write whole register
-			fprintf(stderr, "Addr: %x\n", addr);
+			fprintf(stderr, "Cmd: %x, Addr: %x, Val: %x\n", cmd, addr, *((uint32_t *)ptr));
 
 			// Register access
 			auto it = addr_to_reg.find(addr);
@@ -106,8 +107,7 @@ struct IPU : public sc_core::sc_module {
 			}
 			if ((cmd == tlm::TLM_WRITE_COMMAND) && (addr == ROTATION_ANGLE_ADDR)) {
 				uint32_t value = *((uint32_t *)ptr);
-				if (value > 360 || value < -360)  // greater than max?
-					return;                       // ignore invalid values
+				fprintf(stderr, "Setting rotation angle to %d\n", *((uint32_t *)ptr));
 			}
 			if ((cmd == tlm::TLM_WRITE_COMMAND) && (addr == SCALE_FACTOR_ADDR)) {
 				uint32_t value = *((uint32_t *)ptr);
@@ -143,19 +143,23 @@ struct IPU : public sc_core::sc_module {
 				process_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 			}
 			sc_core::wait(process_event);
-			output_width = input_width;
-			output_height = input_height;
+			//output_width = input_width;
+			//output_height = input_height;
 			
+
+			//process_image();
 			/*//fill frame buffer with input image mirrored on the y axis (flippes 180 degrees)
 			for (unsigned h = 0; h < input_height; h++) {
 				for (unsigned w = 0; w < input_width; w++) {
 					output_buffer[h * input_width + w] = frame_buffer[(input_height-1 - h)* input_width + w];
 				}
 			}*/
-			rotate(25);
+
+			rotate(rotation_angle);
 
 			//memcpy(frame_buffer, output_buffer, IPU_FRAME_BUFFER_SIZE);
 			output_buffer = frame_buffer;
+			fprintf(stderr, "Trigger interrupt with number %d\n", irq_number);
 			plic->gateway_trigger_interrupt(irq_number);
 			enable = false;
 			n++;
@@ -165,7 +169,7 @@ struct IPU : public sc_core::sc_module {
    private:
 	void process_image() {
 		// First perform scaling
-		scale_image();
+		//scale_image();
 
 		// Then perform rotation
 		rotate_image();
@@ -174,12 +178,13 @@ struct IPU : public sc_core::sc_module {
 	void scale_image() {
 		fprintf(stderr, "Scaling");
 		// Simple nearest neighbor scaling
-		uint32_t output_width = input_width * scale_factor;
-		uint32_t output_height = input_height * scale_factor;
+		//uint32_t output_width = input_width * scale_factor;
+		//uint32_t output_height = input_height * scale_factor;
 	}
 
 	void rotate_image() {
 		// Only support 90-degree rotations
+		fprintf(stderr, "Rotating image by %d degrees\n", rotation_angle);
 		switch (rotation_angle) {
 			case 0:
 				// Do fuck all
@@ -247,24 +252,18 @@ struct IPU : public sc_core::sc_module {
 		unsigned char *temp = new unsigned char[OUTPUT_BUFFER_SIZE];
 		
 		double angle = deg * M_PI / 180.0;
-		// Taylor series approximation for cos(x) up to 6th term
-		double x = angle;
-		while (x > 2*M_PI) x -= 2*M_PI;  // normalize angle
-		while (x < -2*M_PI) x += 2*M_PI;
-		double cos_angle = 1 - (x*x)/2 + (x*x*x*x)/24 - (x*x*x*x*x*x)/720;
+
+		double cos_angle = cos(angle);
 		
-		// For sin(x), we use the relation sin(x) = cos(x - PI/2)
-		x = angle - M_PI/2;
-		while (x > 2*M_PI) x -= 2*M_PI;
-		while (x < -2*M_PI) x += 2*M_PI;
-		double sin_angle = 1 - (x*x)/2 + (x*x*x*x)/24 - (x*x*x*x*x*x)/720;
+	
+		double sin_angle = sin(angle);
 
 		double abs_sin = sin_angle;
 		if (abs_sin < 0) abs_sin = -abs_sin;
 		double abs_cos = cos_angle;
 		if (abs_cos < 0) abs_cos = -abs_cos;
-		output_width = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
-		output_height = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
+		output_width = (uint32_t)(input_width * abs_cos + input_height * abs_sin);
+		output_height = (uint32_t)(input_width * abs_sin + input_height * abs_cos);
 		
 		
 		fprintf(stderr, "Rotating image by %d degrees, new dimensions: %d x %d\n", deg, output_width, output_height);
@@ -275,24 +274,25 @@ struct IPU : public sc_core::sc_module {
 		float out_center_x = output_width / 2.0f;
 		float out_center_y = output_height / 2.0f;
 
-		for(int y = 0; y < output_height; y++) {
-			for(int x = 0; x < output_width; x++) {
+		for(uint32_t y = 0; y < output_height; y++) {
+			for(uint32_t x = 0; x < output_width; x++) {
 				float dx = x - out_center_x;
 				float dy = y - out_center_y;
-				float src_x = (dx * cos_angle + dy * sin_angle + center_x);
-				float src_y = (-dx * sin_angle + dy * cos_angle + center_y);
+				u_int32_t src_x = round(dx * cos_angle - dy * sin_angle + center_x);
+				u_int32_t src_y = round(dx * sin_angle + dy * cos_angle + center_y);
 				
 				
 
 				if(src_x >= 0 && src_x < input_width && src_y >= 0 && src_y < input_height) {
-					int ix = (int)src_x;
-					int iy = (int)src_y;
+					uint32_t ix = (uint32_t)src_x;
+					uint32_t iy = (uint32_t)src_y;
 					temp[y * output_width + x] = frame_buffer[iy * input_width + ix];
 				} else {
-					temp[y * output_width + x] = 255; // Fill outside areas with black
+					temp[y * output_width + x] = 0; // Fill outside areas with black
 				}
 			}
 		}
+		fprintf(stderr, "Rotated image\n");
 		memcpy(frame_buffer, temp, IPU_FRAME_BUFFER_SIZE);
 		delete[] temp;
 	} 
