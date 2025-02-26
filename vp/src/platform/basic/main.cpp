@@ -76,7 +76,7 @@ class BasicOptions : public Options {
 	addr_t flash_end_addr = flash_start_addr + Flashcontroller::ADDR_SPACE;  // Usually 528 Byte
 	addr_t display_start_addr = 0x72000000;
 	addr_t display_end_addr = display_start_addr + Display::addressRange;
-		addr_t ipu_start_addr = 0x73000000;
+	addr_t ipu_start_addr = 0x80000000;
 	addr_t ipu_size = 0x01000000;  // 16 MB address space for ipu
 	addr_t ipu_end_addr = ipu_start_addr + ipu_size - 1;
 

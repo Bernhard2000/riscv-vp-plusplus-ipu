@@ -178,6 +178,7 @@ struct CannyCamera : public sc_core::sc_module {
 //	// no suitable image file found, make a monotone one
 //      memset(frame_buffer, (n*32)%256, capture_height*capture_width);
 	// no suitable image file found, make a diagonally striped one
+   fprintf(stderr, "No suitable image file %s found, making a diagonally striped one.\n", infilename);
 	for(unsigned h=0; h<capture_height; h++) {
 	    for(unsigned w=0; w<capture_width; w++) {
 		frame_buffer[h*capture_width+w] = ((w+h+n)*32)%256;

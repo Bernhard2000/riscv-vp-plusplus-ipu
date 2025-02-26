@@ -14,9 +14,6 @@
 #define IPU_MAX_HEIGHT 1080
 #define IPU_FRAME_BUFFER_SIZE (IPU_MAX_WIDTH * IPU_MAX_HEIGHT)
 
-#define VIDEONAME "jku"
-#define IMG_IN "video/" VIDEONAME "%ux%u_%03u.pgm"
-#define AVAIL_IMG 3 /* number of different image frames (1 or more) */
 #define VERBOSE true
 
 #define OUTPUT_BUFFER_SIZE (IPU_MAX_WIDTH * IPU_MAX_HEIGHT)
@@ -26,7 +23,7 @@ struct IPU : public sc_core::sc_module {
 
 	interrupt_gateway *plic = 0;
 	uint32_t irq_number = 0;
-	sc_core::sc_event capture_event;
+	sc_core::sc_event process_event;
 
 	uint32_t enable = 0;  // TODO should probably be boolean flag, or event based
 
@@ -34,11 +31,15 @@ struct IPU : public sc_core::sc_module {
 	unsigned char *frame_buffer = 0;
 	unsigned char *output_buffer = 0;
 
+
 	// Configuration registers
 	uint32_t input_width = 640;   // default width
 	uint32_t input_height = 480;  // default height
 	uint32_t scale_factor = 1;    // default scale factor
 	uint32_t rotation_angle = 0;  // rotation angle in degrees (0, 90, 180, 270)
+
+	uint32_t output_width = 0;
+	uint32_t output_height = 0;
 
 	std::unordered_map<uint64_t, uint32_t *> addr_to_reg;
 
@@ -46,8 +47,10 @@ struct IPU : public sc_core::sc_module {
 		INPUT_WIDTH_ADDR = 0xff0000,
 		INPUT_HEIGHT_ADDR = 0xff0004,
 		SCALE_FACTOR_ADDR = 0xff0008,
-		ROTATION_ANGLE_ADDR = 0xff00c,
+		ROTATION_ANGLE_ADDR = 0xff000c,
 		ENABLE_REG_ADDR = 0xff0010,
+		OUTPUT_WIDTH_ADDR = 0xff0014,
+		OUTPUT_HEIGHT_ADDR = 0xff0018
 	};
 
 	SC_HAS_PROCESS(IPU);
@@ -56,13 +59,15 @@ struct IPU : public sc_core::sc_module {
 		tsock.register_b_transport(this, &IPU::transport);
 
 		frame_buffer = new unsigned char[IPU_FRAME_BUFFER_SIZE];
-
+		output_buffer = new unsigned char[IPU_FRAME_BUFFER_SIZE];
 		addr_to_reg = {
 		    {INPUT_WIDTH_ADDR, &input_width},
 		    {INPUT_HEIGHT_ADDR, &input_height},
 		    {SCALE_FACTOR_ADDR, &scale_factor},
 		    {ROTATION_ANGLE_ADDR, &rotation_angle},
-		    {ENABLE_REG_ADDR, &enable}
+		    {ENABLE_REG_ADDR, &enable},
+			{OUTPUT_WIDTH_ADDR, &output_width},
+			{OUTPUT_HEIGHT_ADDR, &output_height}
 		};
 		SC_THREAD(processing_thread);
 	}
@@ -75,11 +80,15 @@ struct IPU : public sc_core::sc_module {
 
 		if (addr < IPU_FRAME_BUFFER_SIZE) {
 			// Access frame buffer
-			assert(cmd == tlm::TLM_READ_COMMAND);
+			assert(cmd == tlm::TLM_READ_COMMAND || cmd == tlm::TLM_WRITE_COMMAND);
 			assert((addr + len) <= IPU_FRAME_BUFFER_SIZE);
-			memcpy(ptr, &frame_buffer[addr], len);
+			if(cmd == tlm::TLM_WRITE_COMMAND)
+				memcpy(&frame_buffer[addr], ptr, len);
+			else
+				memcpy(ptr, &frame_buffer[addr], len);
 		} else {
 			assert(len == 4);  // NOTE: only allow to read/write whole register
+			fprintf(stderr, "Addr: %x\n", addr);
 
 			// Register access
 			auto it = addr_to_reg.find(addr);
@@ -117,9 +126,9 @@ struct IPU : public sc_core::sc_module {
 
 			// trigger post read/write actions
 			if ((cmd == tlm::TLM_WRITE_COMMAND) && (addr == ENABLE_REG_ADDR)) {
-				capture_event.cancel();
+				process_event.cancel();
 				if (enable) {
-					capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
+					process_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 				}
 			}
 		}
@@ -131,10 +140,21 @@ struct IPU : public sc_core::sc_module {
 		while (true) {
 			fprintf(stderr, "%s: %s waiting for capture event.\n", sc_time_stamp().to_string().c_str(), name());
 			if (enable) {
-				capture_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
+				process_event.notify(sc_core::sc_time(1e7, sc_core::SC_US)); //TODO remove time, just a placeholder for now
 			}
-			sc_core::wait(capture_event);
+			sc_core::wait(process_event);
+			output_width = input_width;
+			output_height = input_height;
+			
+			/*//fill frame buffer with input image mirrored on the y axis (flippes 180 degrees)
+			for (unsigned h = 0; h < input_height; h++) {
+				for (unsigned w = 0; w < input_width; w++) {
+					output_buffer[h * input_width + w] = frame_buffer[(input_height-1 - h)* input_width + w];
+				}
+			}*/
+			rotate(25);
 
+			//memcpy(frame_buffer, output_buffer, IPU_FRAME_BUFFER_SIZE);
 			output_buffer = frame_buffer;
 			plic->gateway_trigger_interrupt(irq_number);
 			enable = false;
@@ -199,10 +219,10 @@ struct IPU : public sc_core::sc_module {
 		for (uint32_t y = 0; y < output_height; y++) {
 			for (uint32_t x = 0; x < output_width; x++) {
 				temp[(output_height - 1 - y) * output_width + (output_width - 1 - x)] =
-				    output_buffer[y * output_width + x];
+				frame_buffer[y * output_width + x];
 			}
 		}
-		memcpy(output_buffer, temp, OUTPUT_BUFFER_SIZE);
+		memcpy(frame_buffer, temp, OUTPUT_BUFFER_SIZE);
 		delete[] temp;
 	}
 
@@ -221,25 +241,60 @@ struct IPU : public sc_core::sc_module {
 
 	//rotate arbitrary degrees (untested and mostly as a placeholder, might be garbage)
 	void rotate(uint32_t deg) {
-		uint32_t output_width = input_width * scale_factor;
-		uint32_t output_height = input_height * scale_factor;
+		//uint32_t output_width = input_width * scale_factor; //TODO allow adjusting of output width and height
+		//uint32_t output_height = input_height * scale_factor;
+		output_buffer = new unsigned char[OUTPUT_BUFFER_SIZE];
 		unsigned char *temp = new unsigned char[OUTPUT_BUFFER_SIZE];
 		
 		double angle = deg * M_PI / 180.0;
-		double cos_angle = cos(angle);
-		double sin_angle = sin(angle);
+		// Taylor series approximation for cos(x) up to 6th term
+		double x = angle;
+		while (x > 2*M_PI) x -= 2*M_PI;  // normalize angle
+		while (x < -2*M_PI) x += 2*M_PI;
+		double cos_angle = 1 - (x*x)/2 + (x*x*x*x)/24 - (x*x*x*x*x*x)/720;
+		
+		// For sin(x), we use the relation sin(x) = cos(x - PI/2)
+		x = angle - M_PI/2;
+		while (x > 2*M_PI) x -= 2*M_PI;
+		while (x < -2*M_PI) x += 2*M_PI;
+		double sin_angle = 1 - (x*x)/2 + (x*x*x*x)/24 - (x*x*x*x*x*x)/720;
 
-		for (uint32_t y = 0; y < output_height; y++) {
-			for (uint32_t x = 0; x < output_width; x++) {
-				int new_x = static_cast<int>(cos_angle * (x - output_width / 2) - sin_angle * (y - output_height / 2) + output_width / 2);
-				int new_y = static_cast<int>(sin_angle * (x - output_width / 2) + cos_angle * (y - output_height / 2) + output_height / 2);
+		double abs_sin = sin_angle;
+		if (abs_sin < 0) abs_sin = -abs_sin;
+		double abs_cos = cos_angle;
+		if (abs_cos < 0) abs_cos = -abs_cos;
+		//output_width = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
+		//output_height = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
+		
+		uint32_t output_width2 = (uint32_t)(input_width * abs_cos + input_height * abs_sin)+3;
+		uint32_t output_height2 = (uint32_t)(input_width * abs_sin + input_height * abs_cos)+3;
+		fprintf(stderr, "Rotating image by %d degrees, new dimensions: %d x %d\n", deg, output_width, output_height);
 
-				if (new_x >= 0 && new_x < output_width && new_y >= 0 && new_y < output_height) {
-					temp[new_y * output_width + new_x] = output_buffer[y * output_width + x];
+		float center_x = input_width / 2.0f;
+		float center_y = input_height / 2.0f;
+
+		float out_center_x = output_width / 2.0f;
+		float out_center_y = output_height / 2.0f;
+
+		for(int y = 0; y < output_height2; y++) {
+			for(int x = 0; x < output_width2; x++) {
+				float dx = x - out_center_x;
+				float dy = y - out_center_y;
+				float src_x = (dx * cos_angle + dy * sin_angle + center_x);
+				float src_y = (-dx * sin_angle + dy * cos_angle + center_y);
+				
+				
+
+				if(src_x >= 0 && src_x < input_width && src_y >= 0 && src_y < input_height) {
+					int ix = (int)src_x;
+					int iy = (int)src_y;
+					temp[y * output_width + x] = frame_buffer[iy * input_width + ix];
+				} else {
+					temp[y * output_width + x] = 255; // Fill outside areas with black
 				}
 			}
 		}
-		memcpy(output_buffer, temp, OUTPUT_BUFFER_SIZE);
+		memcpy(frame_buffer, temp, IPU_FRAME_BUFFER_SIZE);
 		delete[] temp;
 	} 
 };
