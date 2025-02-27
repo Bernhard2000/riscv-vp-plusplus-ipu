@@ -18,14 +18,15 @@
 #define SIGMA 0.6
 #define TLOW  0.3
 #define THIGH 0.8
-#define COLS 100
-#define ROWS 70
+#define COLS 512
+#define ROWS 512
 #define SIZE COLS*ROWS //CANNOT CHANGE SIZE DYNAMICALLY
 #define VIDEONAME "jku100x70_"
-#define IMG_IN    "" VIDEONAME "%03u.pgm"
+#define IMG_IN    "video/test.png"
+//#define IMG_IN    "" VIDEONAME "%03u.pgm"
 #define IMG_OUT   VIDEONAME "%03u_edges.pgm"
-#define IMG_NUM   3 /* number of images processed (1 or more) */
-#define AVAIL_IMG 3 /* number of different image frames (1 or more) */
+#define IMG_NUM   1 /* number of images processed (1 or more) */
+#define AVAIL_IMG 1 /* number of different image frames (1 or more) */
 
 void canny(unsigned char *image, int rows, int cols, float sigma,
     float tlow, float thigh, unsigned char *edge);

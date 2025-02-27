@@ -12,13 +12,19 @@
 
 #include "core/common/irq_if.h"
 
+#include <boost/gil.hpp>
+#include <boost/gil/extension/io/jpeg.hpp>
+#include <boost/gil/extension/io/png.hpp>
+namespace gil = boost::gil;
+
 #define CAM_MAX_WIDTH		1920
 #define CAM_MAX_HEIGHT		1080
 #define CAM_FRAME_BUFFER_SIZE	(CAM_MAX_WIDTH*CAM_MAX_HEIGHT)
 
 #define VIDEONAME "jku"
-#define IMG_IN    "video/" VIDEONAME "%ux%u_%03u.pgm"
-#define AVAIL_IMG 3 /* number of different image frames (1 or more) */
+#define IMG_IN    "video/test.png"
+//#define IMG_IN    "video/" VIDEONAME "%ux%u_%03u.pgm"
+#define AVAIL_IMG 1 /* number of different image frames (1 or more) */
 #define VERBOSE   true
 
 #define ENABLE_HARDWARE_BLUR_BUFFER	// new feature for final exam
@@ -27,6 +33,8 @@
 #define CAM_BLUR_BUFFER_ADDR	0x400000
 #define CAM_BLUR_BUFFER_SIZE	(2*CAM_MAX_WIDTH*CAM_MAX_HEIGHT)
 #endif
+
+
 
 struct CannyCamera : public sc_core::sc_module {
   tlm_utils::simple_target_socket<CannyCamera> tsock;
@@ -163,48 +171,63 @@ struct CannyCamera : public sc_core::sc_module {
     }
   }
 
-  void run() {
-    unsigned int n = 0;
-    char infilename[70];
-    while (true) {
+void run() {
+   unsigned int n = 0;
+   char infilename[70];
+   while (true) {
       if (capture_interval>0) {
-        capture_event.notify(sc_core::sc_time(capture_interval, sc_core::SC_US));
+         capture_event.notify(sc_core::sc_time(capture_interval, sc_core::SC_US));
       }
       sc_core::wait(capture_event);
 
       // capture an image into the frame buffer
       sprintf(infilename, IMG_IN, capture_width, capture_height, (n%AVAIL_IMG)+1);
-      if (read_pgm_image(infilename, frame_buffer, capture_height, capture_width) == 0){
-//	// no suitable image file found, make a monotone one
-//      memset(frame_buffer, (n*32)%256, capture_height*capture_width);
-	// no suitable image file found, make a diagonally striped one
-   fprintf(stderr, "No suitable image file %s found, making a diagonally striped one.\n", infilename);
-	for(unsigned h=0; h<capture_height; h++) {
-	    for(unsigned w=0; w<capture_width; w++) {
-		frame_buffer[h*capture_width+w] = ((w+h+n)*32)%256;
-	    }
-	}
-        if (VERBOSE) fprintf(stderr, "%s: %s captured image %u [%ux%u].\n",
-			sc_time_stamp().to_string().c_str(), name(), n,
-			capture_width, capture_height);
-      } else {
-        if (VERBOSE) fprintf(stderr, "%s: %s captured image %u [%ux%u] (%s).\n",
-			sc_time_stamp().to_string().c_str(), name(), n,
-			capture_width, capture_height, infilename);
+      
+      // Try to read image based on file extension
+      int read_success = 0;
+      std::string filename(infilename);
+      if (filename.substr(filename.size() - 4) == ".pgm") {
+         //define image type 
+         boost::gil::gray8_image_t image_t;
+         read_success = read_pgm_image(infilename, frame_buffer, capture_height, capture_width);
+      } else if (filename.substr(filename.size() - 4) == ".jpg" || filename.substr(filename.size() - 5) == ".jpeg") {
+         boost::gil::rgb8_image_t img;
+         read_success = read_jpg_image(infilename, frame_buffer, capture_height, capture_width);
+      } else if (filename.substr(filename.size() - 4) == ".png") {
+         boost::gil::rgb8_image_t img;
+         read_success = read_png_image(infilename, frame_buffer, capture_height, capture_width);
       }
+
+      if (read_success == 0) {
+         // no suitable image file found, make a diagonally striped one
+         fprintf(stderr, "No suitable image file %s found, making a diagonally striped one.\n", infilename);
+         for(unsigned h=0; h<capture_height; h++) {
+               for(unsigned w=0; w<capture_width; w++) {
+                     frame_buffer[h*capture_width+w] = ((w+h+n)*32)%256;
+               }
+         }
+         if (VERBOSE) fprintf(stderr, "%s: %s captured image %u [%ux%u].\n",
+                           sc_time_stamp().to_string().c_str(), name(), n,
+                           capture_width, capture_height);
+      } else {
+         if (VERBOSE) fprintf(stderr, "%s: %s captured image %u [%ux%u] (%s).\n", 
+                           sc_time_stamp().to_string().c_str(), name(), n,
+                           capture_width, capture_height, infilename);
+      }
+
 #ifdef ENABLE_HARDWARE_BLUR_BUFFER
       if (blur_sigma100 > 0) {
-	gaussian_smooth(frame_buffer, capture_height, capture_width,
-		(float)blur_sigma100/(float)100.0,	// sigma
-		(float)blur_boostfactor,		// boostblurfactor
-		blur_buffer);
+         gaussian_smooth(frame_buffer, capture_height, capture_width,
+               (float)blur_sigma100/(float)100.0,  // sigma
+               (float)blur_boostfactor,     // boostblurfactor
+               blur_buffer);
       }
 #endif
 
       plic->gateway_trigger_interrupt(irq_number);
       n++;
-    }
-  }
+   }
+}
 
 // inserted from Canny sources by Mike Heath (05/17/21, RD)
 
@@ -429,6 +452,71 @@ int read_pgm_image(const char *infilename, unsigned char *image, int rows,
 
    if(fp != stdin) fclose(fp);
    return(1);
+}
+
+/******************************************************************************
+ * Function: read_jpg_image
+ * Purpose: Read a JPEG image using Boost GIL. The image dimensions are checked
+ * against the expected rows and cols. Returns 1 on success, 0 on failure.
+ ******************************************************************************/
+int read_jpg_image(const char *infilename, unsigned char *image, int rows, int cols) {
+   try {
+      
+      gil::rgb8_image_t jpg_img;
+      gil::read_image(infilename, jpg_img, gil::jpeg_tag{});
+      
+      if (jpg_img.width() != (size_t)cols || jpg_img.height() != (size_t)rows) {
+         return 0;
+      }
+
+      auto gray_image = gil::color_converted_view<gil::gray8_pixel_t>(
+         gil::const_view(jpg_img));
+
+      //auto view = gil::view(gray_image);
+      
+      for (int r = 0; r < rows; ++r) {
+         for (int c = 0; c < cols; ++c) {
+            image[r * cols + c] = gray_image(c, r);
+         }
+      }
+         
+      return 1;
+   }
+   catch (...) {
+      return 0;
+   }
+}
+
+/******************************************************************************
+ * Function: read_png_image
+ * Purpose: Read a PNG image using Boost GIL. The image dimensions are checked
+ * against the expected rows and cols. Returns 1 on success, 0 on failure.
+ ******************************************************************************/
+int read_png_image(const char *infilename, unsigned char *image, int rows, int cols) {
+   try {
+      gil::rgb8_image_t png_img;
+      gil::read_image(infilename, png_img, gil::png_tag());
+      
+      if (png_img.width() != (size_t)cols || png_img.height() != (size_t)rows) {
+         return 0;
+      }
+
+      auto gray_image = gil::color_converted_view<gil::gray8_pixel_t>(
+         gil::const_view(png_img));
+
+      //auto view = gil::view(gray_image);
+
+      for (int r = 0; r < rows; ++r) {
+         for (int c = 0; c < cols; ++c) {
+            image[r * cols + c] = gray_image(c, r);
+         }
+      }
+
+      return 1;
+   }
+   catch (...) {
+      return 0;
+   }
 }
 
 };
