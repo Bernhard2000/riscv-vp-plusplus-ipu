@@ -133,7 +133,7 @@ int main()
    char outfilename[70];
    int i;
    
-   for(i = 0; i < IMG_NUM; i++) {
+   for(i = 0; i < 1; i++) {
       sprintf(infilename, IMG_IN, i+1);
       
       if(read_pgm_image(infilename, input, ROWS, COLS) == 0) {
@@ -141,12 +141,14 @@ int main()
          return 1;
       }
 
-      rotate_image(input, output, ROWS, COLS, 45.0f);
-      sprintf(outfilename, IMG_OUT, i+1, "rotate");
+      for(int angle = 0; angle < 360; angle++) {
+        rotate_image(input, output, ROWS, COLS, (float)angle);
+        sprintf(outfilename, IMG_OUT, i+1, "rotate");
 
-      if(write_pgm_image(outfilename, output, ROWS, COLS, "Processed Image", 255) == 0) {
-         fprintf(stderr, "Error writing output image\n");
-         return 1;
+        if(write_pgm_image(outfilename, output, ROWS, COLS, "Processed Image", 255) == 0) {
+          fprintf(stderr, "Error writing output image\n");
+          return 1;
+        }
       }
       scale_image(input, output, ROWS, COLS, 0.5f);
       sprintf(outfilename, IMG_OUT, i+1, "scale");

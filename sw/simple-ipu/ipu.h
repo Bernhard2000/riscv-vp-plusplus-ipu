@@ -12,10 +12,10 @@
 #define OP_RGB_TO_YUV 2
 #define OP_YUV_TO_RGB 3
 
-#define COLS 2048
-#define ROWS 1365
+#define COLS 100
+#define ROWS 70
 #define SIZE COLS*ROWS
-#define IMG_IN    "video/jku%03u.pgm"
+#define IMG_IN    "video/jku100x70_%03u.pgm"
 #define IMG_OUT   "jku%03u_%s.pgm"
 /*#define IMG_IN    "video/img%03u.pgm"
 #define IMG_OUT   "img%03u_%s.pgm"*/

@@ -61,18 +61,19 @@ int Gaussian_kernel_center = 0;
 
 int main(void)
 {
-   unsigned char image[SIZE*2]; //TODO make whatever max size is
-   unsigned char edge[SIZE];
+   unsigned char image[1920*1080]; //TODO make whatever max size is
+   unsigned char edge[1920*1080];
    unsigned int i;
    int windowsize; /* Dimension of the gaussian kernel. */
 
    printf("Start camera");
-   StartCamera(); /* turn on the camera device */
+   //StartCamera(); /* turn on the camera device */
 
 
 
    for(i=0; i<1; i++)
    {
+      StartCamera(); /* turn on the camera device */
       /*************************************************************************
       * Input a frame.
       *************************************************************************/
@@ -80,15 +81,26 @@ int main(void)
       data_in(image, i);
       //ipu_data_in(image, i);
       //data_out(image, i);
+      StopCamera(); /* turn on the camera device */
+      StartIPU(); /* turn on the IPU device */
+      *IPU_ROTATION_ANGLE_REG_ADDR = 180;
+      memcpy(edge, image, 1920*1080);
+      ipu_data_in(edge, i);
+          data_out(edge, i); // Use angle in filename to save each rotation
+      for (int angle = 0; angle < 360; angle++) {
+         memcpy(edge, image, 1920*1080);
+          *IPU_ROTATION_ANGLE_REG_ADDR = angle;
+          ipu_data_in(edge, i);
+          data_out(edge, i + angle); // Use angle in filename to save each rotation
+      }
 
       /*************************************************************************
       * Output a frame.
       *************************************************************************/
    }
-   StopCamera(); /* turn on the camera device */
-   StartIPU(); /* turn on the IPU device */
-   ipu_data_in(image, 0);
-   data_out(image, 0);
+   //StartIPU(); /* turn on the IPU device */
+   //ipu_data_in(image, 0);
+   //data_out(image, 0);
    return(0); /* exit cleanly */
 }
 
@@ -120,7 +132,6 @@ void StartIPU(void)
       *IPU_WIDTH_REG_ADDR = COLS;
       *IPU_HEIGHT_REG_ADDR = ROWS;
       *IPU_SCALE_FACTOR_REG_ADDR  = 1;   /* set requested frame dimensions */
-      *IPU_ROTATION_ANGLE_REG_ADDR = 0;
       *IPU_ENABLE_REG_ADDR = 1;
 }
 
@@ -149,13 +160,13 @@ void data_in(unsigned char *image, unsigned int i)
 
 void ipu_data_in(unsigned char *image, unsigned int i)
 {
-   ipu_frames_processed = 0;
    printf("Read IPU data");
 
    /*************************************************************************
    * Grab an image from the camera
    *************************************************************************/
   copy_image(IPU_INPUT_BUFFER_ADDR, image, sizeof(unsigned char));
+  *IPU_ENABLE_REG_ADDR = 1;
   while (!ipu_frames_processed) {
       asm volatile ("wfi");
    }
@@ -167,6 +178,7 @@ void ipu_data_in(unsigned char *image, unsigned int i)
 
    height = *IPU_OUTPUT_HEIGHT_REG_ADDR;
    width = *IPU_OUTPUT_WIDTH_REG_ADDR;
+   printf("Height: %u, Width: %u\n", height, width);
    copy_image_size(image, (const void*)IPU_INPUT_BUFFER_ADDR, sizeof(unsigned char), height*width);
 }
 
@@ -179,11 +191,11 @@ void data_out(unsigned char *edge, unsigned int i)
    /*************************************************************************
    * Write out an edge image to a file.
    *************************************************************************/
-   n = i % AVAIL_IMG;
+   n = 0;//i % AVAIL_IMG;
    sprintf(outfilename, IMG_OUT, n+1);
    //copy_image(edge, (void*)CAMERA_FRAME_BUFFER_ADDR, sizeof(unsigned char));
    if(VERBOSE) printf("Writing the edge image %s.\n", outfilename);
-   if(write_pgm_image(outfilename, edge, 108, 123, "", 255) == 0){
+   if(write_pgm_image(outfilename, edge, height, width, "", 255) == 0){
       fprintf(stderr, "Error writing the edge image, %s.\n", outfilename);
       exit(1);
    }
